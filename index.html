@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Симулятор Регулятора: Хардкор</title>
+    <style>
+        :root {
+            --bg-color: #0a0a0f;
+            --panel-color: #161625;
+            --accent-color: #e94560;
+            --text-color: #e0e0e0;
+            --success-color: #00e676;
+            --warning-color: #ffab00;
+            --danger-color: #ff1744;
+            --item-width: 110px;
+        }
+
+        body {
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+            user-select: none;
+            transition: background-color 0.3s;
+        }
+
+        /* Анимация получения урона */
+        @keyframes damageFlash {
+            0% { background-color: var(--bg-color); }
+            50% { background-color: #3a0000; }
+            100% { background-color: var(--bg-color); }
+        }
+        .damage-taken {
+            animation: damageFlash 0.5s ease-in-out;
+        }
+
+        .header {
+            width: 100%; max-width: 800px;
+            display: flex; justify-content: space-between; align-items: center;
+            background: var(--panel-color); padding: 15px 25px;
+            border-radius: 12px; margin-bottom: 20px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5); border: 1px solid #333;
+            flex-wrap: wrap; gap: 15px;
+        }
+
+        .stat-box { text-align: center; min-width: 120px; }
+        .stat-label { font-size: 0.7rem; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 5px; }
+        .stat-value { font-size: 1.5rem; font-weight: bold; font-family: 'Courier New', monospace; }
+        .money-positive { color: var(--success-color); }
+        .money-negative { color: var(--danger-color); text-shadow: 0 0 10px rgba(255, 23, 68, 0.5); }
+        
+        .anger-meter-container {
+            width: 100%; max-width: 800px; display: flex; align-items: center; gap: 15px; margin-bottom: 10px;
+        }
+        .anger-meter { flex-grow: 1; height: 14px; background: #222; border-radius: 7px; overflow: hidden; border: 1px solid #444; }
+        .anger-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #ffeb3b, #ff9800, #f44336); transition: width 0.5s ease; }
+
+        .roulette-wrapper {
+            position: relative; width: 100%; max-width: 800px; height: 140px;
+            background-color: #050508; border: 2px solid #333; border-radius: 8px;
+            overflow: hidden; margin-bottom: 20px; box-shadow: inset 0 0 40px rgba(0,0,0,0.9);
+        }
+        .pointer-line {
+            position: absolute; top: 0; bottom: 0; left: 50%; width: 4px;
+            background-color: var(--accent-color); transform: translateX(-50%); z-index: 10;
+            box-shadow: 0 0 15px var(--accent-color);
+        }
+        .pointer-triangle {
+            position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+            width: 0; height: 0; border-left: 15px solid transparent; border-right: 15px solid transparent;
+            border-top: 20px solid var(--accent-color); z-index: 11; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+        }
+        .pointer-triangle.bottom { top: auto; bottom: 0; transform: translateX(-50%) rotate(180deg); }
+        
+        .roulette-track { display: flex; height: 100%; align-items: center; position: absolute; left: 0; will-change: transform; }
+        .service-item {
+            width: var(--item-width); height: 110px; flex-shrink: 0;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            border-right: 1px solid rgba(255,255,255,0.05); background: #11111a; opacity: 0.5;
+            transition: all 0.3s;
+        }
+        .service-item.active {
+            opacity: 1; background: #222233; transform: scale(1.1);
+            box-shadow: 0 0 25px rgba(233, 69, 96, 0.4); z-index: 5; border-radius: 8px; border: 1px solid var(--accent-color);
+        }
+        .service-icon { font-size: 2.5rem; margin-bottom: 5px; filter: grayscale(0.8); }
+        .service-item.active .service-icon { filter: grayscale(0); }
+        .service-name { font-size: 0.75rem; text-align: center; font-weight: 600; color: #888; padding: 0 5px; }
+        .service-item.active .service-name { color: #fff; }
+
+        .controls {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 12px; width: 100%; max-width: 800px; margin-bottom: 20px;
+        }
+        button {
+            padding: 15px; border: none; border-radius: 8px; font-size: 0.9rem; font-weight: bold;
+            cursor: pointer; transition: all 0.2s; color: white; text-transform: uppercase;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3); position: relative; overflow: hidden;
+        }
+        button:disabled { opacity: 0.2; cursor: not-allowed; filter: grayscale(1); transform: none !important; box-shadow: none; }
+        button:active:not(:disabled) { transform: translateY(2px); }
+
+        .btn-spin { background: linear-gradient(45deg, #e94560, #c0354a); grid-column: 1 / -1; font-size: 1.1rem; letter-spacing: 1px; }
+        .btn-slow { background: linear-gradient(45deg, #2979ff, #1565c0); }
+        .btn-limit { background: linear-gradient(45deg, #ffab00, #ff8f00); color: #000; }
+        .btn-ban { background: linear-gradient(45deg, #ff1744, #d50000); }
+
+        .console-log {
+            width: 100%; max-width: 800px; height: 150px; background: #000; border: 1px solid #333;
+            border-radius: 8px; padding: 10px; font-family: 'Courier New', monospace; font-size: 0.75rem;
+            overflow-y: auto; color: #0f0; box-shadow: inset 0 0 15px rgba(0,0,0,0.9); margin-bottom: 20px;
+            border-left: 4px solid #333;
+        }
+        .log-entry { margin-bottom: 5px; padding-bottom: 3px; border-bottom: 1px solid #111; }
+        .log-income { color: var(--success-color); }
+        .log-expense { color: var(--danger-color); font-weight: bold; }
+        .log-info { color: #888; }
+        .log-day { color: var(--warning-color); font-weight: bold; border: 1px solid var(--warning-color); display: inline-block; padding: 2px 5px; border-radius: 4px; }
+        .log-tax { color: #ff4081; }
+
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.9); display: none; justify-content: center;
+            align-items: center; z-index: 1000; backdrop-filter: blur(8px);
+        }
+        .modal {
+            background: #1a1a2e; padding: 30px; border-radius: 16px; text-align: center;
+            max-width: 450px; width: 90%; border: 2px solid var(--accent-color);
+            animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            box-shadow: 0 0 50px rgba(233, 69, 96, 0.2);
+        }
+        @keyframes popIn { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        
+        .modal h2 { margin-top: 0; font-size: 1.5rem; text-transform: uppercase; line-height: 1.3; color: #fff; }
+        .result-row { display: flex; justify-content: space-between; margin: 10px 0; padding: 10px 0; border-bottom: 1px solid #333; font-size: 1rem; }
+        .result-total { display: flex; justify-content: space-between; margin: 20px 0 10px 0; padding-top: 15px; border-top: 2px solid #555; font-size: 1.4rem; font-weight: 800; }
+        
+        .close-btn { 
+            background: #333; color: #fff; width: 100%; margin-top: 20px; 
+            font-size: 1rem; padding: 14px; font-weight: 600; border: 1px solid #555;
+        }
+        .close-btn:hover { background: #444; border-color: #777; }
+
+        .floating-text {
+            position: absolute; font-weight: 900; font-size: 1.4rem; pointer-events: none;
+            animation: floatUp 1.5s ease-out forwards; z-index: 50; text-shadow: 0 2px 10px rgba(0,0,0,0.8);
+        }
+        @keyframes floatUp { 0% { transform: translateY(0) scale(1); opacity: 1; } 100% { transform: translateY(-80px) scale(1.3); opacity: 0; } }
+
+        .game-over-screen {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.95); display: none; flex-direction: column;
+            justify-content: center; align-items: center; z-index: 2000; text-align: center; padding: 20px;
+        }
+        .game-over-screen h1 { font-size: 3rem; color: var(--danger-color); margin-bottom: 10px; text-transform: uppercase; text-shadow: 0 0 20px var(--danger-color); }
+        .restart-btn { background: var(--success-color); color: #000; padding: 15px 50px; font-size: 1.3rem; margin-top: 30px; border: none; border-radius: 8px; cursor: pointer; font-weight: 900; text-transform: uppercase; box-shadow: 0 0 20px rgba(0, 230, 118, 0.4); }
+        .restart-btn:hover { background: #00c853; transform: scale(1.05); }
+
+        .difficulty-badge {
+            position: absolute; top: 10px; right: 10px; background: #333; color: #fff; 
+            padding: 4px 8px; font-size: 0.7rem; border-radius: 4px; text-transform: uppercase;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="difficulty-badge">Режим: Хардкор</div>
+
+    <div class="anger-meter-container">
+        <div class="stat-label" style="min-width: 100px;">Уровень гнева:</div>
+        <div class="anger-meter"><div class="anger-fill" id="angerFill"></div></div>
+        <div class="stat-value" id="angerText" style="font-size: 1rem; min-width: 40px; color: #ffab00;">0%</div>
+    </div>
+
+    <div class="header">
+        <div class="stat-box">
+            <div class="stat-label">Бюджет РФ</div>
+            <div class="stat-value money-positive" id="balanceDisplay">500 000 ₽</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-label">День службы</div>
+            <div class="stat-value" id="dayDisplay">1</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-label">Действий</div>
+            <div class="stat-value" id="actionsDisplay" style="color: #aaa; font-size: 1.2rem;">0 / 3</div>
+        </div>
+    </div>
+
+    <div class="roulette-wrapper">
+        <div class="pointer-triangle"></div>
+        <div class="pointer-line"></div>
+        <div class="pointer-triangle bottom"></div>
+        <div class="roulette-track" id="track"></div>
+    </div>
+
+    <div style="text-align: center; margin-bottom: 15px; color: #888; font-size: 0.9rem; height: 20px;" id="statusText">
+        Нажмите "Запустить мониторинг"
+    </div>
+
+    <div class="controls">
+        <button class="btn-spin" id="spinBtn" onclick="handleSpinClick()">🚀 ЗАПУСТИТЬ МОНИТОРИНГ</button>
+        <button class="btn-slow" id="slowBtn" onclick="applyAction('slow')" disabled>🐢 Замедлить<br><span style="font-size:0.6em; opacity:0.7">Риск: Низкий</span></button>
+        <button class="btn-limit" id="limitBtn" onclick="applyAction('limit')" disabled>⚠️ Ограничить<br><span style="font-size:0.6em; opacity:0.7">Риск: Средний</span></button>
+        <button class="btn-ban" id="banBtn" onclick="applyAction('ban')" disabled>🚫 Забанить<br><span style="font-size:0.6em; opacity:0.7">Риск: Высокий</span></button>
+    </div>
+
+    <div class="console-log" id="gameLog">
+        <div class="log-entry log-info">> СИСТЕМА ЗАГРУЖЕНА. РЕЖИМ: ХАРДКОР.</div>
+        <div class="log-entry log-tax">> ВНИМАНИЕ: Ежедневный налог и расходы на гнев увеличены.</div>
+        <div class="log-entry log-info">> Цель: Продержаться как можно дольше.</div>
+    </div>
+
+    <!-- Modal -->
+    <div class="modal-overlay" id="actionModal">
+        <div class="modal">
+            <h2 id="modalTitle">Отчет о операции</h2>
+            <p id="modalDesc" style="color:#aaa; font-size:0.85rem; margin-bottom: 15px; font-style: italic;"></p>
+            
+            <div class="result-row">
+                <span>Начислено (Премия):</span>
+                <span style="color: var(--success-color)" id="resBonus">+0 ₽</span>
+            </div>
+            <div class="result-row">
+                <span>Расходы (Гнев + Налог):</span>
+                <span style="color: var(--danger-color)" id="resExpense">-0 ₽</span>
+            </div>
+            <div class="result-total">
+                <span>Итоговый баланс:</span>
+                <span id="resTotal">0 ₽</span>
+            </div>
+            
+            <div style="font-size: 0.8rem; color: #ff4081; margin-top: 10px; background: rgba(255, 64, 129, 0.1); padding: 5px; border-radius: 4px;">
+                🔥 Гнев населения вырос на <span id="resAnger">0</span>%
+            </div>
+
+            <button class="close-btn" id="continueBtn" onclick="closeActionModal()">✅ ПРИНЯТЬ ОТЧЕТ</button>
+        </div>
+    </div>
+
+    <div class="game-over-screen" id="gameOverScreen">
+        <h1>КАЗНА ПУСТА!</h1>
+        <p style="font-size: 1.3rem; color: #ccc; max-width: 500px;">Вы не смогли управлять гневом народа и растратили бюджет. Вас отправили в отставку без права восстановления.</p>
+        <p style="color: #888; margin-top: 20px;">Вы продержались <span id="finalDays" style="color: #fff; font-weight: bold; font-size: 1.5rem;">0</span> дней.</p>
+        <button class="restart-btn" onclick="restartGame()">ПОПРОБОВАТЬ СНОВА</button>
+    </div>
+
+    <script>
+        // НАСТРОЙКИ БАЛАНСА (ХАРДКОР)
+        const CONFIG = {
+            startBalance: 600000, // Чуть больше старта, но расходы выше
+            dailyTaxBase: 15000,  // Фиксированный налог за день
+            dailyTaxPerAnger: 150,// Доп налог за каждый % гнева
+            actionBaseCost: 8000, // Базовая стоимость любой операции
+            angerCostMultiplier: 250, // Коэффициент роста расходов от гнева (очень высокий)
+            
+            services: [
+                { name: "YouTube", icon: "▶️" }, { name: "Telegram", icon: "✈️" },
+                { name: "Instagram", icon: "📸" }, { name: "Twitter", icon: "❌" },
+                { name: "Facebook", icon: "👍" }, { name: "Discord", icon: "🎮" },
+                { name: "TikTok", icon: "🎵" }, { name: "WhatsApp", icon: "📞" },
+                { name: "Netflix", icon: "🎬" }, { name: "Spotify", icon: "🎧" },
+                { name: "Reddit", icon: "🤖" }, { name: "Twitch", icon: "📹" },
+                { name: "Pinterest", icon: "📌" }, { name: "LinkedIn", icon: "💼" }
+            ],
+            actions: {
+                slow: { label: "Замедление (DPI)", bonusMin: 12000, bonusMax: 20000, angerMin: 8, angerMax: 15, color: "#2979ff", msg: "Скорость упала до 64 кбит/с. Мемы грузятся долго." },
+                limit: { label: "Ограничение доступа", bonusMin: 25000, bonusMax: 40000, angerMin: 15, angerMax: 30, color: "#ffab00", msg: "Требуется Госуслуги. Люди стоят в очередях." },
+                ban: { label: "Полная блокировка", bonusMin: 45000, bonusMax: 70000, angerMin: 30, angerMax: 55, color: "#ff1744", msg: "Сайт недоступен. Народ выходит в Telegram-каналы жаловаться." }
+            }
+        };
+
+        let state = {
+            balance: CONFIG.startBalance,
+            anger: 0,
+            day: 1,
+            actionsToday: 0,
+            selectedItem: null,
+            isSpinning: false,
+            currentPosition: 0,
+            isModalOpen: false
+        };
+
+        const els = {
+            track: document.getElementById('track'),
+            balance: document.getElementById('balanceDisplay'),
+            angerFill: document.getElementById('angerFill'),
+            angerText: document.getElementById('angerText'),
+            day: document.getElementById('dayDisplay'),
+            actions: document.getElementById('actionsDisplay'),
+            status: document.getElementById('statusText'),
+            log: document.getElementById('gameLog'),
+            modal: document.getElementById('actionModal'),
+            gameOver: document.getElementById('gameOverScreen'),
+            btnSpin: document.getElementById('spinBtn'),
+            btnSlow: document.getElementById('slowBtn'),
+            btnLimit: document.getElementById('limitBtn'),
+            btnBan: document.getElementById('banBtn'),
+            body: document.body
+        };
+
+        function init() {
+            const fullList = [];
+            for(let i=0; i<6; i++) fullList.push(...CONFIG.services);
+            
+            els.track.innerHTML = '';
+            fullList.forEach((service) => {
+                const el = document.createElement('div');
+                el.className = 'service-item';
+                el.innerHTML = `<div class="service-icon">${service.icon}</div><div class="service-name">${service.name}</div>`;
+                els.track.appendChild(el);
+            });
+            updateUI();
+        }
+
+        function getRandomInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+        function formatMoney(amount) { return amount.toLocaleString('ru-RU') + ' ₽'; }
+
+        function log(msg, type = 'info') {
+            const div = document.createElement('div');
+            div.className = `log-entry log-${type}`;
+            div.innerText = `> ${msg}`;
+            els.log.prepend(div);
+            if (els.log.children.length > 40) els.log.lastChild.remove();
+        }
+
+        function showFloatingText(text, color, target) {
+            const rect = target.getBoundingClientRect();
+            const el = document.createElement('div');
+            el.className = 'floating-text';
+            el.innerText = text;
+            el.style.color = color;
+            el.style.left = (rect.left + rect.width/2 - 30) + 'px';
+            el.style.top = rect.top + 'px';
+            document.body.appendChild(el);
+            setTimeout(() => el.remove(), 1500);
+        }
+
+        function triggerDamageEffect() {
+            els.body.classList.remove('damage-taken');
+            void els.body.offsetWidth; // trigger reflow
+            els.body.classList.add('damage-taken');
+        }
+
+        function checkDayChange() {
+            if (state.actionsToday >= 3) {
+                state.day++;
+                state.actionsToday = 0;
+                
+                // Расчет ежедневного налога
+                const dailyTax = CONFIG.dailyTaxBase + (state.anger * CONFIG.dailyTaxPerAnger);
+                state.balance -= dailyTax;
+                
+                log(`=== ДЕНЬ ${state.day} ===`, 'day');
+                log(`Ежедневный налог (База + Гнев): -${formatMoney(dailyTax)}`, 'tax');
+                
+                if (dailyTax > 30000) {
+                    log("ВНИМАНИЕ: Расходы на подавление гнева критически высоки!", 'expense');
+                }
+            }
+        }
+
+        function updateUI() {
+            els.balance.innerText = formatMoney(state.balance);
+            els.balance.className = state.balance < 0 ? 'stat-value money-negative' : 'stat-value money-positive';
+            
+            const angerPercent = Math.min(state.anger, 100);
+            els.angerFill.style.width = `${angerPercent}%`;
+            els.angerText.innerText = `${Math.round(angerPercent)}%`;
+            
+            els.day.innerText = state.day;
+            els.actions.innerText = `${state.actionsToday} / 3`;
+        }
+
+        function setControlsState(spinnerEnabled, actionsEnabled) {
+            els.btnSpin.disabled = !spinnerEnabled;
+            els.btnSlow.disabled = !actionsEnabled;
+            els.btnLimit.disabled = !actionsEnabled;
+            els.btnBan.disabled = !actionsEnabled;
+        }
+
+        function handleSpinClick() {
+            if (state.isSpinning || state.isModalOpen) return;
+            
+            if (state.selectedItem) {
+                // Штраф за простой (пропуск хода)
+                const skipCost = 2000;
+                state.balance -= skipCost;
+                state.actionsToday++;
+                checkDayChange();
+                updateUI();
+                log(`Пропуск хода. Расходы на простой аппарата: -${formatMoney(skipCost)}`, 'expense');
+                
+                if (state.balance <= 0) {
+                    setTimeout(triggerGameOver, 1000);
+                    return;
+                }
+                
+                state.selectedItem = null;
+                document.querySelectorAll('.service-item').forEach(el => el.classList.remove('active'));
+            }
+
+            spinWheel();
+        }
+
+        function spinWheel() {
+            state.isSpinning = true;
+            setControlsState(false, false);
+            els.status.innerText = "Поиск нарушителей...";
+            els.status.style.color = "#fff";
+
+            const itemWidth = 110;
+            const containerWidth = els.track.parentElement.offsetWidth;
+            const totalItems = els.track.children.length;
+            const targetIndex = getRandomInt(25, totalItems - 5);
+            
+            state.selectedItem = CONFIG.services[targetIndex % CONFIG.services.length];
+
+            const centerOffset = containerWidth / 2;
+            const targetPosition = (targetIndex * itemWidth) - centerOffset + (itemWidth / 2);
+            const randomOffset = getRandomInt(-20, 20);
+            const finalPosition = -(targetPosition + randomOffset);
+
+            els.track.animate([
+                { transform: `translateX(${state.currentPosition}px)` },
+                { transform: `translateX(${finalPosition}px)` }
+            ], {
+                duration: 3000,
+                easing: 'cubic-bezier(0.15, 0.9, 0.3, 1)',
+                fill: 'forwards'
+            }).onfinish = () => {
+                state.currentPosition = finalPosition;
+                state.isSpinning = false;
+                
+                document.querySelectorAll('.service-item').forEach(el => el.classList.remove('active'));
+                if (els.track.children[targetIndex]) {
+                    els.track.children[targetIndex].classList.add('active');
+                }
+
+                els.status.innerText = `Цель захвачена: ${state.selectedItem.name}`;
+                els.status.style.color = CONFIG.actions.ban.color;
+                
+                setControlsState(true, true);
+                els.btnSpin.innerText = "🔄 ПРОПУСТИТЬ (-2000₽)";
+            };
+        }
+
+        function applyAction(type) {
+            if (!state.selectedItem || state.isSpinning || state.isModalOpen) return;
+
+            const action = CONFIG.actions[type];
+            const bonus = getRandomInt(action.bonusMin, action.bonusMax);
+            const angerGain = getRandomInt(action.angerMin, action.angerMax);
+            
+            // ЖЕСТКИЙ РАСЧЕТ РАСХОДОВ
+            // Расход = База + (Текущий Гнев * Множитель)
+            // Чем выше гнев, тем дороже ЛЮБОЕ действие
+            const totalExpense = CONFIG.actionBaseCost + (state.anger * CONFIG.angerCostMultiplier);
+            const netProfit = bonus - totalExpense;
+
+            state.balance += netProfit;
+            state.anger += angerGain;
+            if (state.anger > 100) state.anger = 100;
+            
+            state.actionsToday++;
+            checkDayChange();
+
+            // Визуал
+            const btn = type === 'slow' ? els.btnSlow : type === 'limit' ? els.btnLimit : els.btnBan;
+            
+            if (netProfit > 0) {
+                showFloatingText(`+${formatMoney(netProfit)}`, '#00e676', btn);
+                log(`[${action.label}] Прибыль: ${formatMoney(netProfit)} (Гнев +${angerGain}%)`, 'income');
+            } else {
+                showFloatingText(`${formatMoney(netProfit)}`, '#ff1744', btn);
+                log(`[${action.label}] УБЫТОК: ${formatMoney(netProfit)}. Расходы: ${formatMoney(totalExpense)}`, 'expense');
+                triggerDamageEffect();
+            }
+
+            updateUI();
+
+            if (state.balance <= 0) {
+                setTimeout(triggerGameOver, 1500);
+                return;
+            }
+
+            // Модалка
+            document.getElementById('modalTitle').innerText = action.label;
+            document.getElementById('modalTitle').style.color = action.color;
+            document.getElementById('modalDesc').innerText = action.msg;
+            document.getElementById('resBonus').innerText = '+' + formatMoney(bonus);
+            document.getElementById('resExpense').innerText = '-' + formatMoney(totalExpense);
+            
+            const totalEl = document.getElementById('resTotal');
+            totalEl.innerText = (netProfit >= 0 ? '+' : '') + formatMoney(netProfit);
+            totalEl.style.color = netProfit >= 0 ? 'var(--success-color)' : 'var(--danger-color)';
+            document.getElementById('resAnger').innerText = angerGain;
+
+            state.isModalOpen = true;
+            els.modal.style.display = 'flex';
+            setControlsState(false, false);
+            
+            state.selectedItem = null;
+            document.querySelectorAll('.service-item').forEach(el => el.classList.remove('active'));
+            els.status.innerText = "Ожидание подтверждения...";
+        }
+
+        window.closeActionModal = function() {
+            if (!state.isModalOpen) return;
+            els.modal.style.display = 'none';
+            state.isModalOpen = false;
+            setControlsState(true, false);
+            els.btnSpin.innerText = "🚀 ЗАПУСТИТЬ МОНИТОРИНГ";
+            els.status.innerText = "Готов к следующей операции";
+            els.status.style.color = "#fff";
+        };
+
+        function triggerGameOver() {
+            document.getElementById('finalDays').innerText = state.day;
+            els.gameOver.style.display = 'flex';
+            log("ФИНАНСОВЫЙ КРАХ. БЮДЖЕТ ИСЧЕРПАН.", 'expense');
+        }
+
+        function restartGame() {
+            state.balance = CONFIG.startBalance;
+            state.anger = 0;
+            state.day = 1;
+            state.actionsToday = 0;
+            state.selectedItem = null;
+            state.currentPosition = 0;
+            state.isSpinning = false;
+            state.isModalOpen = false;
+            
+            els.track.style.transform = `translateX(0px)`;
+            els.gameOver.style.display = 'none';
+            els.modal.style.display = 'none';
+            els.log.innerHTML = '<div class="log-entry log-info">> НОВАЯ ПОПЫТКА. РЕЖИМ: ХАРДКОР.</div>';
+            
+            setControlsState(true, false);
+            els.btnSpin.innerText = "🚀 ЗАПУСТИТЬ МОНИТОРИНГ";
+            els.status.innerText = "Нажмите кнопку для старта";
+            updateUI();
+        }
+
+        init();
+    </script>
+</body>
+</html>
